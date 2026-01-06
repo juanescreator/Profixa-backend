@@ -179,12 +179,11 @@ app.post("/webhook", async (req, res) => {
 /* =========================
    SERVER
 ========================= */
-import app from "./app.js";
-
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
   console.log(`ProFixa backend activo en puerto ${PORT}`);
 });
+
 
 

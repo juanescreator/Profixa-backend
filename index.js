@@ -25,7 +25,7 @@ mercadopago.configure({
    SQLITE
 ========================= */
 const dbPromise = open({
-  filename: "./db/profixa.db",
+  filename: "./profixa.db",
   driver: sqlite3.Database
 });
 
@@ -184,6 +184,7 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`ProFixa backend activo en puerto ${PORT}`);
 });
+
 
 
 

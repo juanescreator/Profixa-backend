@@ -1,9 +1,17 @@
+app.use(cors());
+app.use(express.json());
+import express from "express";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import mercadopago from "mercadopago";
 import sqlite3 from "sqlite3";
 import { open } from "sqlite";
+import path from "path";
+
+const dbPath = path.join(process.cwd(), "database.sqlite");
+const db = new sqlite3.Database(dbPath);
+
 
 dotenv.config();
 
@@ -119,6 +127,15 @@ app.get("/reservas", async (req, res) => {
     res.status(500).json({ error: "Error obteniendo reservas" });
   }
 });
+
+app.post(
+  "/webhook",
+  express.json({ type: "*/*" }),
+  async (req, res) => {
+    // webhook aquí
+  }
+);
+
 /* =========================
    WEBHOOK MERCADO PAGO
 ========================= */
@@ -184,6 +201,11 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`ProFixa backend activo en puerto ${PORT}`);
 });
+app.get("/", (req, res) => {
+  res.json({ status: "ProFixa backend online" });
+});
+
+
 
 
 

@@ -1,25 +1,20 @@
-app.use(cors());
-app.use(express.json());
-import express from "express";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import mercadopago from "mercadopago";
 import sqlite3 from "sqlite3";
 import { open } from "sqlite";
-import path from "path";
-
-const dbPath = path.join(process.cwd(), "database.sqlite");
-const db = new sqlite3.Database(dbPath);
-
 
 dotenv.config();
 
+/* =========================
+   APP
+========================= */
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 👉 SERVIR FRONTEND (ADMIN, JS, HTML)
+// Servir frontend (opcional)
 app.use(express.static("public"));
 
 /* =========================
@@ -33,7 +28,7 @@ mercadopago.configure({
    SQLITE
 ========================= */
 const dbPromise = open({
-  filename: "./profixa.db",
+  filename: "./db/profixa.db",
   driver: sqlite3.Database
 });
 
@@ -52,6 +47,13 @@ const dbPromise = open({
     )
   `);
 })();
+
+/* =========================
+   HEALTH CHECK (RAILWAY)
+========================= */
+app.get("/", (req, res) => {
+  res.json({ status: "ProFixa backend online" });
+});
 
 /* =========================
    CREAR PREFERENCIA
@@ -84,9 +86,9 @@ app.post("/crear-preferencia", async (req, res) => {
         }
       ],
       back_urls: {
-        success: "http://localhost:5500/checkout.html",
-        failure: "http://localhost:5500/checkout.html",
-        pending: "http://localhost:5500/checkout.html"
+        success: "https://profixa.app/checkout.html",
+        failure: "https://profixa.app/checkout.html",
+        pending: "https://profixa.app/checkout.html"
       },
       external_reference: reservaId.toString(),
       auto_return: "approved"
@@ -100,11 +102,12 @@ app.post("/crear-preferencia", async (req, res) => {
     );
 
     res.json({
+      init_point: response.body.init_point,
       sandbox_init_point: response.body.sandbox_init_point
     });
 
   } catch (error) {
-    console.error("MP ERROR REAL:", error);
+    console.error("❌ Error creando preferencia:", error);
     res.status(500).json({ error: "Error creando preferencia" });
   }
 });
@@ -128,14 +131,6 @@ app.get("/reservas", async (req, res) => {
   }
 });
 
-app.post(
-  "/webhook",
-  express.json({ type: "*/*" }),
-  async (req, res) => {
-    // webhook aquí
-  }
-);
-
 /* =========================
    WEBHOOK MERCADO PAGO
 ========================= */
@@ -144,29 +139,20 @@ app.post("/webhook", async (req, res) => {
     console.log("🔔 Webhook recibido:", req.body);
 
     const paymentId = req.body?.data?.id;
-
-    // Si no viene paymentId, no hacemos nada
-    if (!paymentId) {
-      return res.sendStatus(200);
-    }
+    if (!paymentId) return res.sendStatus(200);
 
     let payment;
 
     try {
-      // Intentar buscar el pago real
       payment = await mercadopago.payment.findById(paymentId);
     } catch (err) {
-      // ⚠️ Pago inexistente (simulador, pruebas internas, etc.)
-      console.warn("Pago no encontrado en MP:", paymentId);
-      return res.sendStatus(200); // MUY IMPORTANTE
+      console.warn("⚠️ Pago no encontrado:", paymentId);
+      return res.sendStatus(200);
     }
 
     const status = payment.body.status;
     const reservaId = payment.body.external_reference;
-
-    if (!reservaId) {
-      return res.sendStatus(200);
-    }
+    if (!reservaId) return res.sendStatus(200);
 
     const db = await dbPromise;
 
@@ -186,10 +172,10 @@ app.post("/webhook", async (req, res) => {
       console.log("❌ Reserva fallida:", reservaId);
     }
 
-    res.sendStatus(200); // SIEMPRE 200
+    res.sendStatus(200);
   } catch (error) {
     console.error("🔥 Error crítico webhook:", error);
-    res.sendStatus(200); // JAMÁS responder 500 a MP
+    res.sendStatus(200);
   }
 });
 
@@ -201,12 +187,3 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`ProFixa backend activo en puerto ${PORT}`);
 });
-app.get("/", (req, res) => {
-  res.json({ status: "ProFixa backend online" });
-});
-
-
-
-
-
-

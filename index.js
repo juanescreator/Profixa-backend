@@ -4,51 +4,45 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import MercadoPago from "mercadopago";
 import sqlite3 from "sqlite3";
 import { open } from "sqlite";
+import { MercadoPagoConfig, Preference, Payment } from "mercadopago";
 import fs from "fs";
 import path from "path";
 
+// ===============================
+// ENV
+// ===============================
 dotenv.config();
 
 const app = express();
+const PORT = process.env.PORT || 3001;
 
-/* ===============================
-   MIDDLEWARE
-================================ */
+// ===============================
+// MIDDLEWARE
+// ===============================
 app.use(cors());
 app.use(express.json());
 
-/* ===============================
-   PATHS (IMPORTANTE PARA RAILWAY)
-================================ */
-const __dirname = new URL(".", import.meta.url).pathname;
-
-// Crear carpeta db si NO existe (Railway FIX)
-const dbDir = path.join(__dirname, "db");
+// ===============================
+// DATABASE PATH (CRÍTICO PARA RAILWAY)
+// ===============================
+const dbDir = path.resolve("./db");
 if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir);
+  fs.mkdirSync(dbDir, { recursive: true });
 }
 
-// Ruta absoluta de la DB
-const dbPath = path.join(dbDir, "profixa.db");
-
-/* ===============================
-   SQLITE CONFIG
-================================ */
 const dbPromise = open({
-  filename: dbPath,
+  filename: path.join(dbDir, "profixa.db"),
   driver: sqlite3.Database,
 });
 
-/* ===============================
-   INIT DATABASE
-================================ */
+// ===============================
+// INIT DB
+// ===============================
 (async () => {
   const db = await dbPromise;
 
-  // Tabla reservas
   await db.exec(`
     CREATE TABLE IF NOT EXISTS reservas (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,44 +56,38 @@ const dbPromise = open({
     )
   `);
 
-  // Tabla admins (para login)
   await db.exec(`
     CREATE TABLE IF NOT EXISTS admins (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT UNIQUE,
-      password TEXT,
+      password_hash TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  console.log("✅ Base de datos inicializada");
+  console.log("✅ Base de datos lista");
 })();
 
-/* ===============================
-   MERCADO PAGO CONFIG
-================================ */
-if (!process.env.MP_ACCESS_TOKEN) {
-  console.error("❌ MP_ACCESS_TOKEN no definido");
-  process.exit(1);
-}
-
-const mp = new MercadoPago({
-   accesstoken: process.env.MP_ACCESS_TOKEN,
+// ===============================
+// MERCADO PAGO CONFIG (FORMA CORRECTA)
+// ===============================
+const mpConfig = new MercadoPagoConfig({
+  accessToken: process.env.MP_ACCESS_TOKEN,
 });
 
-/* ===============================
-   HEALTH CHECK
-================================ */
+const preferenceClient = new Preference(mpConfig);
+const paymentClient = new Payment(mpConfig);
+
+// ===============================
+// HEALTH CHECK
+// ===============================
 app.get("/", (req, res) => {
-  res.json({
-    ok: true,
-    message: "ProFixa backend activo 🚀",
-  });
+  res.json({ ok: true, message: "ProFixa backend activo" });
 });
 
-/* ===============================
-   CREAR PREFERENCIA
-================================ */
+// ===============================
+// CREAR PREFERENCIA
+// ===============================
 app.post("/crear-preferencia", async (req, res) => {
   try {
     const { profesional, categoria, ciudad, precio } = req.body;
@@ -110,7 +98,6 @@ app.post("/crear-preferencia", async (req, res) => {
 
     const db = await dbPromise;
 
-    // Guardar reserva
     const result = await db.run(
       `INSERT INTO reservas (profesional, categoria, ciudad, precio)
        VALUES (?, ?, ?, ?)`,
@@ -138,59 +125,37 @@ app.post("/crear-preferencia", async (req, res) => {
       notification_url: `${process.env.BASE_URL}/webhook`,
     };
 
-    const response = await mp.preferences.create(preference);
+    const response = await preferenceClient.create({ body: preference });
 
     await db.run(
-      `UPDATE reservas SET preference_id = ? WHERE id = ?`,
-      [response.body.id, reservaId]
+      "UPDATE reservas SET preference_id = ? WHERE id = ?",
+      [response.id, reservaId]
     );
 
-    res.json({
-      init_point: response.body.init_point,
-    });
+    res.json({ init_point: response.init_point });
   } catch (error) {
     console.error("❌ Error creando preferencia:", error);
     res.status(500).json({ error: "Error creando preferencia" });
   }
 });
 
-/* ===============================
-   OBTENER RESERVAS (ADMIN)
-================================ */
-app.get("/reservas", async (req, res) => {
-  try {
-    const db = await dbPromise;
-    const reservas = await db.all(
-      `SELECT * FROM reservas ORDER BY created_at DESC`
-    );
-    res.json(reservas);
-  } catch (error) {
-    console.error("❌ Error obteniendo reservas:", error);
-    res.status(500).json({ error: "Error obteniendo reservas" });
-  }
-});
-
-/* ===============================
-   WEBHOOK MERCADO PAGO
-================================ */
+// ===============================
+// WEBHOOK MERCADO PAGO (ANTI-CRASH)
+// ===============================
 app.post("/webhook", async (req, res) => {
   try {
     const paymentId = req.body?.data?.id;
-
-    if (!paymentId) {
-      return res.sendStatus(200);
-    }
+    if (!paymentId) return res.sendStatus(200);
 
     let payment;
     try {
-      payment = await mp.payment.findById(paymentId);
-    } catch (err) {
-      console.warn("⚠️ Pago no encontrado:", paymentId);
+      payment = await paymentClient.get({ id: paymentId });
+    } catch {
       return res.sendStatus(200);
     }
 
-    const status = payment.body.status;
-    const reservaId = payment.body.external_reference;
+    const status = payment.status;
+    const reservaId = payment.external_reference;
 
     if (!reservaId) return res.sendStatus(200);
 
@@ -211,18 +176,30 @@ app.post("/webhook", async (req, res) => {
     }
 
     res.sendStatus(200);
-  } catch (error) {
-    console.error("🔥 Error webhook:", error);
+  } catch (err) {
+    console.error("🔥 Webhook error:", err);
     res.sendStatus(200);
   }
 });
 
-/* ===============================
-   START SERVER
-================================ */
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`🚀 ProFixa backend activo en puerto ${PORT}`);
+// ===============================
+// LISTAR RESERVAS (ADMIN)
+// ===============================
+app.get("/reservas", async (req, res) => {
+  try {
+    const db = await dbPromise;
+    const rows = await db.all(
+      "SELECT * FROM reservas ORDER BY created_at DESC"
+    );
+    res.json(rows);
+  } catch {
+    res.status(500).json({ error: "Error obteniendo reservas" });
+  }
 });
 
-
+// ===============================
+// START SERVER
+// ===============================
+app.listen(PORT, () => {
+  console.log(`🚀 ProFixa backend corriendo en puerto ${PORT}`);
+});

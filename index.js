@@ -138,7 +138,7 @@ app.post("/crear-preferencia", async (req, res) => {
       notification_url: `${process.env.BASE_URL}/webhook`,
     };
 
-    const response = await mercadopago.preferences.create(preference);
+    const response = await mp.preferences.create(preference);
 
     await db.run(
       `UPDATE reservas SET preference_id = ? WHERE id = ?`,
@@ -183,7 +183,7 @@ app.post("/webhook", async (req, res) => {
 
     let payment;
     try {
-      payment = await mercadopago.payment.findById(paymentId);
+      payment = await mp.payment.findById(paymentId);
     } catch (err) {
       console.warn("⚠️ Pago no encontrado:", paymentId);
       return res.sendStatus(200);
@@ -224,4 +224,5 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🚀 ProFixa backend activo en puerto ${PORT}`);
 });
+
 

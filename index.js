@@ -4,7 +4,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import mercadopago from "mercadopago";
+import MercadoPago from "mercadopago";
 import sqlite3 from "sqlite3";
 import { open } from "sqlite";
 import fs from "fs";
@@ -83,8 +83,8 @@ if (!process.env.MP_ACCESS_TOKEN) {
   process.exit(1);
 }
 
-mercadopago.configure({
-  access_token: process.env.MP_ACCESS_TOKEN,
+const mp = new MercadoPago({
+   accesstoken: process.env.MP_ACCESS_TOKEN,
 });
 
 /* ===============================
@@ -224,3 +224,4 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🚀 ProFixa backend activo en puerto ${PORT}`);
 });
+

@@ -2,128 +2,140 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import sqlite3 from "sqlite3";
-import { open } from "sqlite";
-
-import MercadoPago from "mercadopago";
-import adminRoutes from "./routes/admin.js";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+import mercadopago from "mercadopago";
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
-/* =========================
-   MIDDLEWARES
-========================= */
 app.use(cors());
 app.use(express.json());
 
-/* =========================
-   DATABASE (SQLite)
-========================= */
-const db = await open({
-  filename: "./db/profixa.db",
-  driver: sqlite3.Database
+// ==========================
+// CONFIGURACIÓN
+// ==========================
+const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
+
+// ==========================
+// MERCADO PAGO
+// ==========================
+mercadopago.configure({
+  access_token: MP_ACCESS_TOKEN
 });
 
-/* =========================
-   MERCADO PAGO (SDK NUEVO)
-========================= */
-const mp = new MercadoPago({
-  accessToken: process.env.MP_ACCESS_TOKEN
+// ==========================
+// SQLITE (OBLIGATORIO /tmp)
+// ==========================
+const db = new sqlite3.Database("/tmp/profixa.db", (err) => {
+  if (err) {
+    console.error("❌ Error abriendo SQLite:", err);
+  } else {
+    console.log("✅ SQLite conectado");
+  }
 });
 
-/* =========================
-   HEALTH CHECK
-========================= */
-app.get("/", (req, res) => {
-  res.json({
-    status: "ProFixa backend running",
-    env: process.env.NODE_ENV || "production"
+// ==========================
+// CREAR TABLA ADMIN
+// ==========================
+db.run(`
+  CREATE TABLE IF NOT EXISTS admins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    password TEXT NOT NULL
+  )
+`);
+
+// ==========================
+// INSERTAR ADMIN SI NO EXISTE
+// ==========================
+db.get(`SELECT * FROM admins LIMIT 1`, async (err, row) => {
+  if (!row) {
+    const hash = await bcrypt.hash(ADMIN_PASSWORD, 10);
+    db.run(`INSERT INTO admins (password) VALUES (?)`, [hash]);
+    console.log("✅ Admin creado");
+  }
+});
+
+// ==========================
+// LOGIN ADMIN
+// ==========================
+app.post("/admin-login", (req, res) => {
+  const { password } = req.body;
+
+  db.get(`SELECT * FROM admins LIMIT 1`, async (err, admin) => {
+    if (!admin) {
+      return res.status(401).json({ error: "Admin no existe" });
+    }
+
+    const ok = await bcrypt.compare(password, admin.password);
+    if (!ok) {
+      return res.status(401).json({ error: "Password incorrecto" });
+    }
+
+    const token = jwt.sign({ admin: true }, JWT_SECRET, {
+      expiresIn: "1d"
+    });
+
+    res.json({ token });
   });
 });
 
-/* =========================
-   ADMIN ROUTES
-========================= */
-app.use("/admin", adminRoutes);
+// ==========================
+// MIDDLEWARE ADMIN
+// ==========================
+function requireAdmin(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth) return res.sendStatus(401);
 
-/* =========================
-   CREAR PREFERENCIA
-========================= */
+  try {
+    jwt.verify(auth.split(" ")[1], JWT_SECRET);
+    next();
+  } catch {
+    res.sendStatus(401);
+  }
+}
+
+// ==========================
+// MERCADO PAGO - CREAR PREFERENCIA
+// ==========================
 app.post("/crear-preferencia", async (req, res) => {
   try {
-    const { title, price } = req.body;
+    const preference = {
+      items: req.body.items,
+      back_urls: {
+        success: req.body.success_url,
+        failure: req.body.failure_url
+      },
+      auto_return: "approved"
+    };
 
-    if (!title || !price) {
-      return res.status(400).json({ error: "Datos incompletos" });
-    }
-
-    const preference = await mp.preferences.create({
-      body: {
-        items: [
-          {
-            title,
-            quantity: 1,
-            unit_price: Number(price),
-            currency_id: "COP"
-          }
-        ],
-        back_urls: {
-          success: "https://profixa.com/success",
-          failure: "https://profixa.com/failure",
-          pending: "https://profixa.com/pending"
-        },
-        auto_return: "approved",
-        notification_url: `${process.env.BASE_URL}/webhook`
-      }
-    });
-
-    res.json({
-      id: preference.id,
-      init_point: preference.init_point
-    });
-
-  } catch (error) {
-    console.error("Error creando preferencia:", error);
-    res.status(500).json({ error: "Error creando preferencia" });
+    const response = await mercadopago.preferences.create(preference);
+    res.json({ init_point: response.body.init_point });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error Mercado Pago" });
   }
 });
 
-/* =========================
-   WEBHOOK MERCADO PAGO
-========================= */
-app.post("/webhook", async (req, res) => {
-  try {
-    const paymentId = req.body?.data?.id;
-
-    if (!paymentId) {
-      return res.sendStatus(200);
-    }
-
-    const payment = await mp.payment.get(paymentId);
-
-    console.log("📩 Webhook recibido:");
-    console.log({
-      id: payment.id,
-      status: payment.status,
-      amount: payment.transaction_amount
-    });
-
-    // aquí luego guardaremos en SQLite
-
-    res.sendStatus(200);
-  } catch (error) {
-    console.error("Webhook error:", error);
-    res.sendStatus(200);
-  }
+// ==========================
+// WEBHOOK
+// ==========================
+app.post("/webhook", (req, res) => {
+  console.log("🔔 Webhook recibido:", req.body);
+  res.sendStatus(200);
 });
 
-/* =========================
-   START SERVER
-========================= */
+// ==========================
+// ROOT
+// ==========================
+app.get("/", (req, res) => {
+  res.send("ProFixa Backend OK 🚀");
+});
+
+// ==========================
 app.listen(PORT, () => {
-  console.log(`🚀 ProFixa backend listening on port ${PORT}`);
+  console.log(`🚀 Server corriendo en puerto ${PORT}`);
 });
-
-

@@ -5,7 +5,7 @@ import sqlite3 from "sqlite3";
 import { open } from "sqlite";
 
 import MercadoPago from "mercadopago";
-import adminRoutes from "./admin.js";
+import adminRoutes from "./routes/admin.js";
 
 dotenv.config();
 
@@ -125,4 +125,5 @@ app.post("/webhook", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 ProFixa backend listening on port ${PORT}`);
 });
+
 

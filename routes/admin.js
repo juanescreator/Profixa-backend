@@ -1,32 +1,52 @@
-import { Router } from "express";
-import bcrypt from "bcryptjs";
+import express from "express";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
+import sqlite3 from "sqlite3";
+import path from "path";
+import { fileURLToPath } from "url";
 
-const router = Router();
+const router = express.Router();
 
-const ADMIN_EMAIL = "admin@profixa.com";
-const ADMIN_PASSWORD_HASH = bcrypt.hashSync("Admin123!", 10);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+const dbPath =
+  process.env.NODE_ENV === "production"
+    ? "/tmp/profixa.db"
+    : path.join(__dirname, "../db/profixa.db");
 
-  if (email !== ADMIN_EMAIL) {
-    return res.status(401).json({ error: "Credenciales inválidas" });
+const db = new sqlite3.Database(dbPath);
+
+router.post("/admin-login", (req, res) => {
+  const { password } = req.body;
+
+  if (!password) {
+    return res.status(400).json({ error: "Password requerida" });
   }
 
-  const ok = await bcrypt.compare(password, ADMIN_PASSWORD_HASH);
-  if (!ok) {
-    return res.status(401).json({ error: "Credenciales inválidas" });
-  }
+  db.get(`SELECT * FROM admins LIMIT 1`, async (err, admin) => {
+    if (err) {
+      return res.status(500).json({ error: "DB error" });
+    }
 
-  const token = jwt.sign(
-    { admin: true, email },
-    process.env.JWT_SECRET,
-    { expiresIn: "2h" }
-  );
+    if (!admin) {
+      return res.status(401).json({ error: "Admin no existe" });
+    }
 
-  res.json({ token });
+    const valid = await bcrypt.compare(password, admin.password);
+
+    if (!valid) {
+      return res.status(401).json({ error: "Credenciales inválidas" });
+    }
+
+    const token = jwt.sign(
+      { adminId: admin.id },
+      process.env.JWT_SECRET,
+      { expiresIn: "8h" }
+    );
+
+    res.json({ token });
+  });
 });
 
 export default router;
-

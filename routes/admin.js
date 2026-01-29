@@ -1,65 +1,51 @@
 import { Router } from "express";
-import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import sqlite3 from "sqlite3";
-import path from "path";
-import { fileURLToPath } from "url";
+import jwt from "jsonwebtoken";
 
 const router = Router();
 
 /* =========================
-   PATHS
+   VALIDACIONES DE ARRANQUE
 ========================= */
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+if (!process.env.ADMIN_PASSWORD) {
+  throw new Error("❌ ADMIN_PASSWORD no está definida");
+}
 
-const dbPath =
-  process.env.NODE_ENV === "production"
-    ? "/tmp/profixa.db"
-    : path.join(__dirname, "../db/profixa.db");
-
-const db = new sqlite3.Database(dbPath);
+if (!process.env.JWT_SECRET) {
+  throw new Error("❌ JWT_SECRET no está definida");
+}
 
 /* =========================
-   ADMIN LOGIN
+   HASH DEL PASSWORD (UNA VEZ)
 ========================= */
-router.post("/login", (req, res) => {
+const ADMIN_PASSWORD_HASH = bcrypt.hashSync(
+  process.env.ADMIN_PASSWORD,
+  10
+);
+
+/* =========================
+   LOGIN ADMIN
+========================= */
+router.post("/login", async (req, res) => {
   const { password } = req.body;
 
   if (!password) {
     return res.status(400).json({ error: "Password requerida" });
   }
 
-  db.get(`SELECT * FROM admins LIMIT 1`, async (err, admin) => {
-    if (err) {
-      console.error("DB error:", err);
-      return res.status(500).json({ error: "DB error" });
-    }
+  const ok = await bcrypt.compare(password, ADMIN_PASSWORD_HASH);
 
-    if (!admin) {
-      return res.status(401).json({ error: "Admin no existe" });
-    }
+  if (!ok) {
+    return res.status(401).json({ error: "Credenciales inválidas" });
+  }
 
-    try {
-      const valid = await bcrypt.compare(password, admin.password);
+  const token = jwt.sign(
+    { admin: true },
+    process.env.JWT_SECRET,
+    { expiresIn: "8h" }
+  );
 
-      if (!valid) {
-        return res.status(401).json({ error: "Credenciales inválidas" });
-      }
-
-      const token = jwt.sign(
-        { adminId: admin.id, admin: true },
-        process.env.JWT_SECRET,
-        { expiresIn: "8h" }
-      );
-
-      res.json({ token });
-
-    } catch (error) {
-      console.error("bcrypt error:", error);
-      res.status(500).json({ error: "Error interno" });
-    }
-  });
+  res.json({ token });
 });
 
 export default router;

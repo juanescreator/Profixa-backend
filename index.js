@@ -52,6 +52,10 @@ db.run(`
 // INSERTAR ADMIN SI NO EXISTE
 // ==========================
 db.get(`SELECT * FROM admins LIMIT 1`, async (err, row) => {
+  
+  if (!process.env.ADMIN_PASSWORD) {
+  throw new Error("❌ ADMIN_PASSWORD no está definida");
+}
   if (!row) {
     const hash = await bcrypt.hash(ADMIN_PASSWORD, 10);
     db.run(`INSERT INTO admins (password) VALUES (?)`, [hash]);
@@ -141,4 +145,5 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server corriendo en puerto ${PORT}`);
 });
+
 

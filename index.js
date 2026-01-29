@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import sqlite3 from "sqlite3";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import mercadopago from "mercadopago";
+import { MercadoPagoConfig, Preference } from "mercadopago";
 
 dotenv.config();
 
@@ -23,8 +23,8 @@ const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
 // ==========================
 // MERCADO PAGO
 // ==========================
-mercadopago.configure({
-  access_token: MP_ACCESS_TOKEN
+const mpClient = new MercadoPagoConfig({
+  accessToken: process.env.MP_ACCESS_TOKEN
 });
 
 // ==========================
@@ -103,22 +103,24 @@ function requireAdmin(req, res, next) {
 // ==========================
 app.post("/crear-preferencia", async (req, res) => {
   try {
-    const preference = {
-      items: req.body.items,
-      back_urls: {
-        success: req.body.success_url,
-        failure: req.body.failure_url
-      },
-      auto_return: "approved"
-    };
-
-    const response = await mercadopago.preferences.create(preference);
-    res.json({ init_point: response.body.init_point });
+    const response = await preference.create({
+      body: {
+        items: req.body.items,
+        back_urls: {
+          success: req.body.success_url,
+          failure: req.body.failure_url
+        },
+        auto_return: "approved"
+      }
+    });
+    const preference = new Preference(mpClient);
+    res.json({ init_point: response.init_point });
   } catch (err) {
-    console.error(err);
+    console.error("❌ Mercado Pago error:", err);
     res.status(500).json({ error: "Error Mercado Pago" });
   }
 });
+
 
 // ==========================
 // WEBHOOK
@@ -139,3 +141,4 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server corriendo en puerto ${PORT}`);
 });
+

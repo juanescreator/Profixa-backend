@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { MercadoPagoConfig, Preference } from "mercadopago";
+import MercadoPago from "mercadopago";
 
 dotenv.config();
 
@@ -9,34 +9,37 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 /* =========================
-   MERCADO PAGO CONFIG
+   CORS CONFIG (CORRECTO)
 ========================= */
-if (!process.env.MP_ACCESS_TOKEN) {
-  throw new Error("❌ MP_ACCESS_TOKEN no definido");
-}
+app.use(
+  cors({
+    origin: "https://profixa.netlify.app",
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type"],
+  })
+);
 
-const client = new MercadoPagoConfig({
-  accessToken: process.env.MP_ACCESS_TOKEN
-});
-
-const preferenceClient = new Preference(client);
-
-/* =========================
-   MIDDLEWARE
-========================= */
-app.use(cors({
-  origin: ["https://profixa.netlify.app"],
-  methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type"]
-}));
+// 👇 ESTO ES CLAVE PARA EL PREFLIGHT
+app.options("*", cors());
 
 app.use(express.json());
+
+/* =========================
+   MERCADO PAGO
+========================= */
+if (!process.env.MP_ACCESS_TOKEN) {
+  throw new Error("❌ MP_ACCESS_TOKEN no está definido");
+}
+
+const mp = new MercadoPago({
+  accessToken: process.env.MP_ACCESS_TOKEN,
+});
 
 /* =========================
    HEALTH
 ========================= */
 app.get("/", (req, res) => {
-  res.json({ ok: true, service: "ProFixa backend running" });
+  res.json({ status: "OK ProFixa backend running" });
 });
 
 /* =========================
@@ -50,36 +53,34 @@ app.post("/crear-preferencia", async (req, res) => {
       return res.status(400).json({ error: "Datos incompletos" });
     }
 
-    const response = await preferenceClient.create({
-      body: {
-        items: [
-          {
-            title,
-            quantity: 1,
-            unit_price: Number(price),
-            currency_id: "COP"
-          }
-        ],
-        back_urls: {
-          success: "https://profixa.netlify.app/success",
-          failure: "https://profixa.netlify.app/failure",
-          pending: "https://profixa.netlify.app/pending"
+    const preference = {
+      items: [
+        {
+          title,
+          quantity: 1,
+          unit_price: Number(price),
+          currency_id: "COP",
         },
-        auto_return: "approved"
-      }
-    });
+      ],
+      back_urls: {
+        success: "https://profixa.netlify.app/success",
+        failure: "https://profixa.netlify.app/failure",
+        pending: "https://profixa.netlify.app/pending",
+      },
+      auto_return: "approved",
+    };
+
+    const response = await mp.preferences.create(preference);
 
     res.json({
-      ok: true,
-      init_point: response.init_point
+      init_point: response.init_point,
     });
-
   } catch (error) {
-    console.error("MP ERROR:", error);
+    console.error("❌ Error Mercado Pago:", error);
     res.status(500).json({ error: "Error creando preferencia" });
   }
 });
 
 app.listen(PORT, () => {
-  console.log("🚀 ProFixa backend activo en puerto", PORT);
+  console.log("🚀 Server running on port", PORT);
 });

@@ -9,7 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 /* =========================
-   CORS CONFIG (CORRECTO)
+   CORS
 ========================= */
 app.use(
   cors({
@@ -19,24 +19,22 @@ app.use(
   })
 );
 
-// 👇 ESTO ES CLAVE PARA EL PREFLIGHT
 app.options("*", cors());
-
 app.use(express.json());
 
 /* =========================
-   MERCADO PAGO
+   MERCADO PAGO (CORRECTO)
 ========================= */
 if (!process.env.MP_ACCESS_TOKEN) {
-  throw new Error("❌ MP_ACCESS_TOKEN no está definido");
+  throw new Error("MP_ACCESS_TOKEN no definido");
 }
 
-const mp = new MercadoPago({
-  accessToken: process.env.MP_ACCESS_TOKEN,
+MercadoPago.configure({
+  access_token: process.env.MP_ACCESS_TOKEN,
 });
 
 /* =========================
-   HEALTH
+   HEALTH CHECK
 ========================= */
 app.get("/", (req, res) => {
   res.json({ status: "OK ProFixa backend running" });
@@ -70,13 +68,13 @@ app.post("/crear-preferencia", async (req, res) => {
       auto_return: "approved",
     };
 
-    const response = await mp.preferences.create(preference);
+    const response = await MercadoPago.preferences.create(preference);
 
     res.json({
-      init_point: response.init_point,
+      init_point: response.body.init_point,
     });
   } catch (error) {
-    console.error("❌ Error Mercado Pago:", error);
+    console.error("Error Mercado Pago:", error);
     res.status(500).json({ error: "Error creando preferencia" });
   }
 });

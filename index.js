@@ -1,20 +1,20 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import MercadoPago from "mercadopago";
+import MercadoPagoConfig, { Preference } from "mercadopago";
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
 /* =========================
-   CORS CONFIG (NETLIFY)
+   CORS
 ========================= */
 app.use(
   cors({
-    origin: "https://profixa.netlify.app",
-    methods: ["GET", "POST", "OPTIONS"],
+    origin: ["https://profixa.netlify.app"],
+    methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"],
   })
 );
@@ -22,24 +22,27 @@ app.use(
 app.use(express.json());
 
 /* =========================
-   MERCADO PAGO
+   MERCADO PAGO CONFIG
 ========================= */
-const mp = new MercadoPago({
+if (!process.env.MP_ACCESS_TOKEN) {
+  throw new Error("❌ MP_ACCESS_TOKEN no está definido");
+}
+
+const mpClient = new MercadoPagoConfig({
   accessToken: process.env.MP_ACCESS_TOKEN,
 });
 
+const preference = new Preference(mpClient);
+
 /* =========================
-   HEALTH CHECK
+   HEALTH
 ========================= */
 app.get("/", (req, res) => {
-  res.json({
-    status: "OK",
-    service: "ProFixa backend running",
-  });
+  res.json({ status: "OK ProFixa backend running" });
 });
 
 /* =========================
-   CREAR PREFERENCIA REAL
+   CREAR PREFERENCIA
 ========================= */
 app.post("/crear-preferencia", async (req, res) => {
   try {
@@ -49,14 +52,14 @@ app.post("/crear-preferencia", async (req, res) => {
       return res.status(400).json({ error: "Datos incompletos" });
     }
 
-    const preference = await mp.preferences.create({
+    const result = await preference.create({
       body: {
         items: [
           {
             title,
             quantity: 1,
-            unit_price: Number(price),
             currency_id: "COP",
+            unit_price: Number(price),
           },
         ],
         back_urls: {
@@ -69,19 +72,17 @@ app.post("/crear-preferencia", async (req, res) => {
     });
 
     res.json({
-      init_point: preference.init_point,
-      sandbox_init_point: preference.sandbox_init_point,
+      checkout_url: result.init_point,
     });
-
   } catch (error) {
-    console.error("❌ Mercado Pago error:", error);
+    console.error("❌ MercadoPago error:", error);
     res.status(500).json({ error: "Error creando preferencia" });
   }
 });
 
 /* =========================
-   START SERVER
+   START
 ========================= */
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log("🚀 Server running on port", PORT);
 });

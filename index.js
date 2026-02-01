@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import MercadoPagoConfig, { Preference } from "mercadopago";
+import mercadopago from "mercadopago";
 
 dotenv.config();
 
@@ -28,11 +28,9 @@ if (!process.env.MP_ACCESS_TOKEN) {
   throw new Error("❌ MP_ACCESS_TOKEN no está definido");
 }
 
-const mpClient = new MercadoPagoConfig({
-  accessToken: process.env.MP_ACCESS_TOKEN,
+mercadopago.configure({
+  access_token: process.env.MP_ACCESS_TOKEN,
 });
-
-const preference = new Preference(mpClient);
 
 /* =========================
    HEALTH
@@ -52,27 +50,27 @@ app.post("/crear-preferencia", async (req, res) => {
       return res.status(400).json({ error: "Datos incompletos" });
     }
 
-    const result = await preference.create({
-      body: {
-        items: [
-          {
-            title,
-            quantity: 1,
-            currency_id: "COP",
-            unit_price: Number(price),
-          },
-        ],
-        back_urls: {
-          success: "https://profixa.netlify.app/exito.html",
-          failure: "https://profixa.netlify.app/error.html",
-          pending: "https://profixa.netlify.app/pendiente.html",
+    const preference = {
+      items: [
+        {
+          title,
+          quantity: 1,
+          currency_id: "COP",
+          unit_price: Number(price),
         },
-        auto_return: "approved",
+      ],
+      back_urls: {
+        success: "https://profixa.netlify.app/exito.html",
+        failure: "https://profixa.netlify.app/error.html",
+        pending: "https://profixa.netlify.app/pendiente.html",
       },
-    });
+      auto_return: "approved",
+    };
+
+    const response = await mercadopago.preferences.create(preference);
 
     res.json({
-      checkout_url: result.init_point,
+      checkout_url: response.body.init_point,
     });
   } catch (error) {
     console.error("❌ MercadoPago error:", error);

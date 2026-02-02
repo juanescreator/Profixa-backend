@@ -1,56 +1,45 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-/* =========================
-   CORS — FIX DEFINITIVO
-========================= */
-app.use(cors({
-  origin: "https://profixa.netlify.app",
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-}));
+/* 🔥 LOG DE VIDA */
+console.log("🔥 BACKEND PROFIXA REAL EJECUTÁNDOSE");
 
-// 👇 MUY IMPORTANTE
-app.options("*", cors());
+/* 🔥 CORS FORZADO */
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "https://profixa.netlify.app");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
 
 app.use(express.json());
 
-/* =========================
-   HEALTH
-========================= */
+/* HEALTH */
 app.get("/", (req, res) => {
-  res.json({ status: "OK ProFixa backend running" });
+  res.json({ ok: true, message: "Backend ProFixa vivo" });
 });
 
-/* =========================
-   CREAR PREFERENCIA (SIMULADA O REAL)
-========================= */
-app.post("/crear-preferencia", async (req, res) => {
-  try {
-    const { title, price } = req.body;
+/* RESERVA */
+app.post("/crear-preferencia", (req, res) => {
+  const { title, price } = req.body;
 
-    if (!title || !price) {
-      return res.status(400).json({ error: "Datos incompletos" });
-    }
-
-    // ⚠️ aquí luego va Mercado Pago real
-    res.json({
-      init_point: "https://www.mercadopago.com/checkout"
-    });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Error interno" });
+  if (!title || !price) {
+    return res.status(400).json({ error: "Datos incompletos" });
   }
+
+  // simulación checkout (por ahora)
+  res.json({
+    init_point: "https://www.mercadopago.com.co/checkout/v1/redirect?pref_id=TEST"
+  });
 });
 
 app.listen(PORT, () => {
-  console.log("🚀 Server running on port", PORT);
+  console.log("🚀 Server listening on", PORT);
 });
 
